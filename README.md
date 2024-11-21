@@ -11,7 +11,7 @@ Build extension for updating sem-version in build.zig.zon
 You can use `zig fetch`command to install it.
 
 ```
-zig fetch=set_version --save https://github.com/ritalin/zig-set-version
+zig fetch --save=set_version git+https://github.com/ritalin/zig-set-version
 ```
 
 Then add the following to `build.zig`.

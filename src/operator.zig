@@ -3,7 +3,7 @@
 //! is to delete this file and start with root.zig instead.
 const std = @import("std");
 
-fn current(allocator: std.mem.Allocator, source: [:0]const u8) ![]const u8 {
+pub fn current(allocator: std.mem.Allocator, source: [:0]const u8) ![]const u8 {
     const range = try readVersionInternal(allocator, source);
 
     return allocator.dupe(u8, source[range.start..range.end]);
@@ -27,7 +27,7 @@ test "show current version" {
     try std.testing.expectEqualStrings(expect, version);
 }
 
-fn renew(allocator: std.mem.Allocator, source: [:0]const u8, new_version: std.SemanticVersion) ![]const u8 {
+pub fn renew(allocator: std.mem.Allocator, source: [:0]const u8, new_version: std.SemanticVersion) ![]const u8 {
     const range = try readVersionInternal(allocator, source);
 
     return replaceVersion(allocator, source, range, new_version);
@@ -76,7 +76,78 @@ test "version renewal" {
 pub const VersionPart = enum {major, minor, patch};
 pub const IncOptions = std.enums.EnumFieldStruct(enum {pre, build}, bool, true);
 
-fn increment(allocator: std.mem.Allocator, source: [:0]const u8, part: VersionPart, keep_options: IncOptions) ![]const u8 {
+pub fn resolveIncArgs(args: []const []const u8) !struct{part: VersionPart, options: IncOptions} {
+    var part: VersionPart = undefined;
+    var options: IncOptions = .{.pre = false, .build = false};
+
+    const DoneSet = std.enums.EnumSet(CommandArgKind);
+    const part_set = DoneSet.init(.{.major = true, .minor = true, .patch = true});
+    var done = DoneSet.initEmpty();
+
+    for (args) |arg| {
+        if (! std.mem.startsWith(u8, arg, "--")) {
+            return error.UnknownArg;
+        }
+
+        if (CommandArgMap.get(arg[2..])) |kind| {
+            switch (kind) {
+                .major => {
+                    if (done.contains(kind)) return error.VersionPartMultiple; 
+                    part = .major;
+                    done.setUnion(part_set);
+                },
+                .minor => {
+                    if (done.contains(kind)) return error.VersionPartMultiple; 
+                    part = .minor;
+                    done.setUnion(part_set);
+                },
+                .patch => {
+                    if (done.contains(kind)) return error.VersionPartMultiple; 
+                    part = .patch;
+                    done.setUnion(part_set);
+                },
+                .@"keep-pre" => {
+                    if (done.contains(kind)) return error.VersionOptMultiple; 
+                    options.pre = true;
+                    done.insert(kind);
+                },
+                .@"keep-build" => {
+                    if (done.contains(kind)) return error.VersionOptMultiple; 
+                    options.build = true;
+                    done.insert(kind);
+                },
+            }
+        }
+        else {
+            return error.UnknownArg;
+        }
+    }
+
+    if (done.intersectWith(part_set).count() == 0) return error.VersionPartNotFound;
+
+    return .{
+        .part = part,
+        .options = options,
+    };
+}
+
+const CommandArgKind = enum {
+    major,
+    minor,
+    patch,
+    @"keep-pre",
+    @"keep-build",
+};
+
+const CommandArgMap = std.StaticStringMap(CommandArgKind).initComptime(.{
+    .{@tagName(.major), .major},
+    .{@tagName(.minor), .minor},
+    .{@tagName(.patch), .patch},
+    .{@tagName(.@"keep-pre"), .@"keep-pre"},
+    .{@tagName(.@"keep-build"),. @"keep-build"},
+});
+
+pub fn increment(allocator: std.mem.Allocator, source: [:0]const u8, part: VersionPart, keep_options: IncOptions) !struct{std.SemanticVersion, []const u8} {
     const range = try readVersionInternal(allocator, source);
     var version = try std.SemanticVersion.parse(source[range.start..range.end]);
 
@@ -103,7 +174,10 @@ fn increment(allocator: std.mem.Allocator, source: [:0]const u8, part: VersionPa
         version.build = null;
     }
 
-    return replaceVersion(allocator, source, range, version);
+    return .{
+        version,
+        try replaceVersion(allocator, source, range, version),
+    };
 }
 
 test "increment patch version with keeping build" {
@@ -123,10 +197,12 @@ test "increment patch version with keeping build" {
         \\  .dependencies = .{},
         \\}
     ;
+    const expect_version = std.SemanticVersion{.major = 1, .minor = 2, .patch = 4, .pre = "alpha", .build = "9876"};
 
-    const result = try increment(allocator, source, .patch, .{});
+    const version, const result = try increment(allocator, source, .patch, .{});
     defer allocator.free(result);
 
+    try std.testing.expectEqualDeep(expect_version, version);
     try std.testing.expectEqualStrings(expect, result);
 }
 
@@ -147,10 +223,12 @@ test "increment patch version with keeping pre only" {
         \\  .dependencies = .{},
         \\}
     ;
+    const expect_version = std.SemanticVersion{.major = 1, .minor = 2, .patch = 4, .pre = "alpha"};
 
-    const result = try increment(allocator, source, .patch, .{.build = false});
+    const version, const result = try increment(allocator, source, .patch, .{.build = false});
     defer allocator.free(result);
 
+    try std.testing.expectEqualDeep(expect_version, version);
     try std.testing.expectEqualStrings(expect, result);
 }
 
@@ -171,10 +249,12 @@ test "increment patch version without keeping options#1" {
         \\  .dependencies = .{},
         \\}
     ;
+    const expect_version = std.SemanticVersion{.major = 1, .minor = 2, .patch = 4};
 
-    const result = try increment(allocator, source, .patch, .{.pre = false, .build = false});
+    const version, const result = try increment(allocator, source, .patch, .{.pre = false, .build = false});
     defer allocator.free(result);
 
+    try std.testing.expectEqualDeep(expect_version, version);
     try std.testing.expectEqualStrings(expect, result);
 }
 
@@ -195,10 +275,12 @@ test "increment patch version without keeping options#2" {
         \\  .dependencies = .{},
         \\}
     ;
+    const expect_version = std.SemanticVersion{.major = 1, .minor = 2, .patch = 4};
 
-    const result = try increment(allocator, source, .patch, .{.pre = false, .build = true});
+    const version, const result = try increment(allocator, source, .patch, .{.pre = false, .build = true});
     defer allocator.free(result);
 
+    try std.testing.expectEqualDeep(expect_version, version);
     try std.testing.expectEqualStrings(expect, result);
 }
 
@@ -219,10 +301,12 @@ test "increment minor version with keeping all" {
         \\  .dependencies = .{},
         \\}
     ;
+    const expect_version = std.SemanticVersion{.major = 1, .minor = 3, .patch = 0, .pre = "alpha", .build = "9876"};
 
-    const result = try increment(allocator, source, .minor, .{});
+    const version, const result = try increment(allocator, source, .minor, .{});
     defer allocator.free(result);
 
+    try std.testing.expectEqualDeep(expect_version, version);
     try std.testing.expectEqualStrings(expect, result);
 }
 
@@ -243,10 +327,12 @@ test "increment minor version without keeping all" {
         \\  .dependencies = .{},
         \\}
     ;
+    const expect_version = std.SemanticVersion{.major = 1, .minor = 3, .patch = 0};
 
-    const result = try increment(allocator, source, .minor, .{.pre = false, .build = false});
+    const version, const result = try increment(allocator, source, .minor, .{.pre = false, .build = false});
     defer allocator.free(result);
 
+    try std.testing.expectEqualDeep(expect_version, version);
     try std.testing.expectEqualStrings(expect, result);
 }
 
@@ -267,10 +353,12 @@ test "increment major version with keeping all" {
         \\  .dependencies = .{},
         \\}
     ;
+    const expect_version = std.SemanticVersion{.major = 2, .minor = 0, .patch = 0, .pre = "alpha", .build = "9876"};
 
-    const result = try increment(allocator, source, .major, .{});
+    const version, const result = try increment(allocator, source, .major, .{});
     defer allocator.free(result);
 
+    try std.testing.expectEqualDeep(expect_version, version);
     try std.testing.expectEqualStrings(expect, result);
 }
 
@@ -291,14 +379,16 @@ test "increment major version without keeping all" {
         \\  .dependencies = .{},
         \\}
     ;
+    const expect_version = std.SemanticVersion{.major = 2, .minor = 0, .patch = 0};
 
-    const result = try increment(allocator, source, .major, .{.pre = false, .build = false});
+    const version, const result = try increment(allocator, source, .major, .{.pre = false, .build = false});
     defer allocator.free(result);
 
+    try std.testing.expectEqualDeep(expect_version, version);
     try std.testing.expectEqualStrings(expect, result);
 }
 
-fn readBuildZon(allocator: std.mem.Allocator, full_path: []const u8) ![]const u8 {
+pub fn readBuildZon(allocator: std.mem.Allocator, full_path: []const u8) ![:0]const u8 {
     var file = try std.fs.openFileAbsolute(full_path, .{});
     defer file.close();
 

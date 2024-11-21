@@ -125,7 +125,7 @@ fn processCommand(allocator: std.mem.Allocator, step: *std.Build.Step, subcomman
     try tmp_file.file.writeAll(new_content);
     try tmp_file.finish();
 
-    step.result_stderr = try std.fmt.allocPrint(allocator, "Update to `{}`", .{new_version});
+    step.result_stderr = try std.fmt.allocPrint(allocator, "Updated to `{}`", .{new_version});
 }
 
 fn showUsage() ![]const u8 {

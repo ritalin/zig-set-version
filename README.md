@@ -1,6 +1,6 @@
 # zig-set-version
 
-Build extension for updating sem-version in build.zig.zon
+Build extension for handling sem-version in build.zig.zon
 
 ## Requirement
 

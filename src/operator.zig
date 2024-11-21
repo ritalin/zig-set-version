@@ -3,10 +3,20 @@
 //! is to delete this file and start with root.zig instead.
 const std = @import("std");
 
-pub fn current(allocator: std.mem.Allocator, source: [:0]const u8) ![]const u8 {
+pub fn readCurrent(allocator: std.mem.Allocator, source: [:0]const u8) ![]const u8 {
     const range = try readVersionInternal(allocator, source);
 
     return allocator.dupe(u8, source[range.start..range.end]);
+}
+
+pub fn currentVersion(allocator: std.mem.Allocator) ![]const u8 {
+    const path = try std.fs.cwd().realpathAlloc(allocator, "build.zig.zon");
+    defer allocator.free(path);
+
+    const source = try readBuildZon(allocator, path);
+    defer allocator.free(source);
+
+    return readCurrent(allocator, source);
 }
 
 test "show current version" {
@@ -21,7 +31,7 @@ test "show current version" {
     ;
     const expect = "1.2.3";
 
-    const version = try current(allocator, source);
+    const version = try readCurrent(allocator, source);
     defer allocator.free(version);
 
     try std.testing.expectEqualStrings(expect, version);

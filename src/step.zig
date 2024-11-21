@@ -66,7 +66,7 @@ fn processCommand(allocator: std.mem.Allocator, step: *std.Build.Step, subcomman
                 return;
             },
             .show => {
-                step.result_stderr = try op.current(allocator, content);
+                step.result_stderr = try op.readCurrent(allocator, content);
                 return;
             },
             .renew => {

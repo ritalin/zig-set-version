@@ -73,8 +73,8 @@ test "version renewal" {
     try std.testing.expectEqualStrings(expect, result);
 }
 
-const VersionPart = enum {major, minor, patch};
-const IncOptions = std.enums.EnumFieldStruct(enum {pre, build}, bool, true);
+pub const VersionPart = enum {major, minor, patch};
+pub const IncOptions = std.enums.EnumFieldStruct(enum {pre, build}, bool, true);
 
 fn increment(allocator: std.mem.Allocator, source: [:0]const u8, part: VersionPart, keep_options: IncOptions) ![]const u8 {
     const range = try readVersionInternal(allocator, source);

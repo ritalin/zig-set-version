@@ -3,52 +3,299 @@
 //! is to delete this file and start with root.zig instead.
 const std = @import("std");
 
-fn show() !void {
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+fn current(allocator: std.mem.Allocator, source: [:0]const u8) ![]const u8 {
+    const range = try readVersionInternal(allocator, source);
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
-
-    try bw.flush();
+    return allocator.dupe(u8, source[range.start..range.end]);
 }
 
-fn renew(new_version: std.SemanticVersion) !void {
-    _ = new_version;
-    unreachable;
+test "show current version" {
+    const allocator = std.testing.allocator;
+    
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = "1.2.3";
+
+    const version = try current(allocator, source);
+    defer allocator.free(version);
+
+    try std.testing.expectEqualStrings(expect, version);
+}
+
+fn renew(allocator: std.mem.Allocator, source: [:0]const u8, new_version: std.SemanticVersion) ![]const u8 {
+    const range = try readVersionInternal(allocator, source);
+
+    return replaceVersion(allocator, source, range, new_version);
+}
+
+fn replaceVersion(allocator: std.mem.Allocator, source: [:0]const u8, range: std.zig.Token.Loc, version: std.SemanticVersion) ![]const u8 {
+    const ver_str = try std.fmt.allocPrint(allocator, "{}", .{version});
+    defer allocator.free(ver_str);
+
+    var buf = try std.ArrayList(u8).initCapacity(allocator, source.len - (range.end - range.start) + ver_str.len);
+    defer buf.deinit();
+    var writer = buf.writer();
+
+    try writer.writeAll(source[0..range.start]);
+    try writer.writeAll(ver_str);
+    try writer.writeAll(source[range.end..]);
+
+   return buf.toOwnedSlice();
 }
 
 test "version renewal" {
-    // const allocator = std.testing.allocator;
+    const allocator = std.testing.allocator;
     
-    // const source = 
-    //     \\.{
-    //     \\  .name = "SomeProject",
-    //     \\  .version = "0.0.1",
-    //     \\  .dependencies = .{},
-    //     \\}
-    // ;
-    // const expect = 
-    //     \\.{
-    //     \\  .name = "SomeProject",
-    //     \\  .version = "1.2.3",
-    //     \\  .dependencies = .{},
-    //     \\}
-    // ;
-}
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "0.0.1",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3",
+        \\  .dependencies = .{},
+        \\}
+    ;
 
-const VersionOptions = std.enums.EnumFieldStruct(std.meta.FieldEnum(std.SemanticVersion), ?[]const u8, @as(?[]const u8, null));
+    const version = std.SemanticVersion{.major = 1, .minor = 2, .patch = 3};
+    const result = try renew(allocator, source, version);
+    defer allocator.free(result);
 
-fn set(options: VersionOptions) !void {
-    _ = options;
-    unreachable;
+    try std.testing.expectEqualStrings(expect, result);
 }
 
 const VersionPart = enum {major, minor, patch};
+const IncOptions = std.enums.EnumFieldStruct(enum {pre, build}, bool, true);
 
-fn increment(part: VersionPart) !void {
-    _ = part;
-    unreachable;
+fn increment(allocator: std.mem.Allocator, source: [:0]const u8, part: VersionPart, keep_options: IncOptions) ![]const u8 {
+    const range = try readVersionInternal(allocator, source);
+    var version = try std.SemanticVersion.parse(source[range.start..range.end]);
+
+    switch (part) {
+        .major => {
+            version.major += 1;
+            version.minor = 0;
+            version.patch = 0;
+        },
+        .minor => {
+            version.minor += 1;
+            version.patch = 0;
+        },
+        .patch => {
+            version.patch += 1;
+        }
+    }
+
+    if (! keep_options.build) {
+        version.build = null;
+    }
+    if (! keep_options.pre) {
+        version.pre = null;
+        version.build = null;
+    }
+
+    return replaceVersion(allocator, source, range, version);
+}
+
+test "increment patch version with keeping build" {
+    const allocator = std.testing.allocator;
+    
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.4-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+
+    const result = try increment(allocator, source, .patch, .{});
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings(expect, result);
+}
+
+test "increment patch version with keeping pre only" {
+    const allocator = std.testing.allocator;
+    
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.4-alpha",
+        \\  .dependencies = .{},
+        \\}
+    ;
+
+    const result = try increment(allocator, source, .patch, .{.build = false});
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings(expect, result);
+}
+
+test "increment patch version without keeping options#1" {
+    const allocator = std.testing.allocator;
+    
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.4",
+        \\  .dependencies = .{},
+        \\}
+    ;
+
+    const result = try increment(allocator, source, .patch, .{.pre = false, .build = false});
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings(expect, result);
+}
+
+test "increment patch version without keeping options#2" {
+    const allocator = std.testing.allocator;
+    
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.4",
+        \\  .dependencies = .{},
+        \\}
+    ;
+
+    const result = try increment(allocator, source, .patch, .{.pre = false, .build = true});
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings(expect, result);
+}
+
+test "increment minor version with keeping all" {
+    const allocator = std.testing.allocator;
+    
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.3.0-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+
+    const result = try increment(allocator, source, .minor, .{});
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings(expect, result);
+}
+
+test "increment minor version without keeping all" {
+    const allocator = std.testing.allocator;
+    
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.3.0",
+        \\  .dependencies = .{},
+        \\}
+    ;
+
+    const result = try increment(allocator, source, .minor, .{.pre = false, .build = false});
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings(expect, result);
+}
+
+test "increment major version with keeping all" {
+    const allocator = std.testing.allocator;
+    
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "2.0.0-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+
+    const result = try increment(allocator, source, .major, .{});
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings(expect, result);
+}
+
+test "increment major version without keeping all" {
+    const allocator = std.testing.allocator;
+    
+    const source = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "1.2.3-alpha+9876",
+        \\  .dependencies = .{},
+        \\}
+    ;
+    const expect = 
+        \\.{
+        \\  .name = "SomeProject",
+        \\  .version = "2.0.0",
+        \\  .dependencies = .{},
+        \\}
+    ;
+
+    const result = try increment(allocator, source, .major, .{.pre = false, .build = false});
+    defer allocator.free(result);
+
+    try std.testing.expectEqualStrings(expect, result);
 }
 
 fn readBuildZon(allocator: std.mem.Allocator, full_path: []const u8) ![]const u8 {

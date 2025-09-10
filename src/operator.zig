@@ -403,7 +403,13 @@ pub fn readBuildZon(allocator: std.mem.Allocator, full_path: []const u8) ![:0]co
     var buffer: [4096]u8 = undefined;
     var reader = file.reader(&buffer);
     
-    return try reader.interface.allocRemainingAlignedSentinel(allocator, .unlimited, .@"8", 0);
+    if (@hasDecl(std.Io.Reader, "allocRemainingAlignedSentinel")) {
+        return try reader.interface.allocRemainingAlignedSentinel(allocator, .unlimited, .@"8", 0);
+    }
+    else {
+        const size = try reader.getSize();
+        return try file.readToEndAllocOptions(allocator, size, size, .@"8", 0);
+    }
 }
 
 fn readVersionInternal(allocator: std.mem.Allocator, source: [:0]const u8) !std.zig.Token.Loc {

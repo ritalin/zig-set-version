@@ -4,7 +4,7 @@ Build extension for handling sem-version in build.zig.zon
 
 ## Requirement
 
-* Zig 0.14.0 or latter.
+* Zig 0.15.1 or latter.
 
 ## Instration
 

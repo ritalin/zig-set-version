@@ -114,18 +114,20 @@ fn processCommand(allocator: std.mem.Allocator, step: *std.Build.Step, subcomman
     };
     defer allocator.free(new_content);
 
+    var buffer: [4096]u8 = undefined;
     var tmp_file = try std.fs.AtomicFile.init(
         "build.zig.zon", 
         std.fs.File.default_mode, 
         std.fs.cwd(), 
-        false
+        false,
+        &buffer
     );
     defer tmp_file.deinit();
 
-    try tmp_file.file.writeAll(new_content);
+    try tmp_file.file_writer.interface.writeAll(new_content);
     try tmp_file.finish();
 
-    step.result_stderr = try std.fmt.allocPrint(allocator, "Updated to `{}`", .{new_version});
+    step.result_stderr = try std.fmt.allocPrint(allocator, "Updated to `{f}`", .{new_version});
 }
 
 fn showUsage() ![]const u8 {

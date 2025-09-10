@@ -44,18 +44,17 @@ pub fn renew(allocator: std.mem.Allocator, source: [:0]const u8, new_version: st
 }
 
 fn replaceVersion(allocator: std.mem.Allocator, source: [:0]const u8, range: std.zig.Token.Loc, version: std.SemanticVersion) ![]const u8 {
-    const ver_str = try std.fmt.allocPrint(allocator, "{}", .{version});
+    const ver_str = try std.fmt.allocPrint(allocator, "{f}", .{version});
     defer allocator.free(ver_str);
 
-    var buf = try std.ArrayList(u8).initCapacity(allocator, source.len - (range.end - range.start) + ver_str.len);
-    defer buf.deinit();
-    var writer = buf.writer();
+    var writer = std.Io.Writer.Allocating.init(allocator);
+    writer.deinit();
 
-    try writer.writeAll(source[0..range.start]);
-    try writer.writeAll(ver_str);
-    try writer.writeAll(source[range.end..]);
-
-   return buf.toOwnedSlice();
+    try writer.writer.writeAll(source[0..range.start]);
+    try writer.writer.writeAll(ver_str);
+    try writer.writer.writeAll(source[range.end..]);
+    
+    return writer.toOwnedSlice();
 }
 
 test "version renewal" {
@@ -401,9 +400,10 @@ test "increment major version without keeping all" {
 pub fn readBuildZon(allocator: std.mem.Allocator, full_path: []const u8) ![:0]const u8 {
     var file = try std.fs.openFileAbsolute(full_path, .{});
     defer file.close();
-
-    const meta = try file.metadata();
-    return try file.readToEndAllocOptions(allocator, meta.size(), meta.size(), @alignOf(u8), 0);
+    var buffer: [4096]u8 = undefined;
+    var reader = file.reader(&buffer);
+    
+    return try reader.interface.allocRemainingAlignedSentinel(allocator, .unlimited, .@"8", 0);
 }
 
 fn readVersionInternal(allocator: std.mem.Allocator, source: [:0]const u8) !std.zig.Token.Loc {
@@ -415,7 +415,7 @@ fn readVersionInternal(allocator: std.mem.Allocator, source: [:0]const u8) !std.
 
     var buf: [2]std.zig.Ast.Node.Index = undefined;
 
-    if (ast.fullStructInit(&buf, node_links[0].lhs)) |node| {
+    if (ast.fullStructInit(&buf, node_links[0].node)) |node| {
         for (node.ast.fields) |field_index| {
             const token_index = ast.firstToken(field_index) - 2;
             if (token_tags[token_index] != .identifier) continue;

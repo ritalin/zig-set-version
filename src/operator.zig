@@ -48,7 +48,7 @@ fn replaceVersion(allocator: std.mem.Allocator, source: [:0]const u8, range: std
     defer allocator.free(ver_str);
 
     var writer = std.Io.Writer.Allocating.init(allocator);
-    writer.deinit();
+    defer writer.deinit();
 
     try writer.writer.writeAll(source[0..range.start]);
     try writer.writer.writeAll(ver_str);

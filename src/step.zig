@@ -19,7 +19,7 @@ const CommandStep = struct {
                 .name = name,
                 .owner = owner,
                 .makeFn = make,
-            }),        
+            }),
         };
 
         return self;
@@ -30,23 +30,23 @@ const CommandStep = struct {
         const builder = self.step.owner;
         _ = options;
 
-        const path = 
-            std.fs.cwd().realpathAlloc(builder.allocator, "build.zig.zon") 
+        const path =
+            std.Io.Dir.cwd().realPathFileAlloc(builder.graph.io, "build.zig.zon", builder.allocator)
             catch {
                 return step.fail("`build.zig.zon` is not found", .{});
             };
         defer builder.allocator.free(path);
 
-        const content = try op.readBuildZon(builder.allocator, path);
+        const content = try op.readBuildZon(builder.graph.io, builder.allocator, path);
         defer builder.allocator.free(content);
 
         if (builder.args) |args| {
             const subcommand = std.meta.stringToEnum(Subcommand, args[0]);
 
-            try processCommand(builder.allocator, step, subcommand orelse .show, args, content);
+            try processCommand(builder.graph.io, builder.allocator, step, subcommand orelse .show, args, content);
         }
         else {
-            try processCommand(builder.allocator, step, .show, &.{}, content);
+            try processCommand(builder.graph.io, builder.allocator, step, .show, &.{}, content);
         }
     }
 };
@@ -58,7 +58,7 @@ const Subcommand = enum {
     inc,
 };
 
-fn processCommand(allocator: std.mem.Allocator, step: *std.Build.Step, subcommand: Subcommand, args: []const []const u8, content: [:0]const u8) !void {
+fn processCommand(io: std.Io, allocator: std.mem.Allocator, step: *std.Build.Step, subcommand: Subcommand, args: []const []const u8, content: [:0]const u8) !void {
     const new_version, const new_content = result: {
         switch (subcommand) {
             .help => {
@@ -73,8 +73,8 @@ fn processCommand(allocator: std.mem.Allocator, step: *std.Build.Step, subcomman
                 if (args.len < 2) {
                     return step.fail("Need to specify version (Usage: `zig build version -- {s} \"1.2.3\"`)", .{@tagName(subcommand)});
                 }
-                
-                const version: std.SemanticVersion = 
+
+                const version: std.SemanticVersion =
                     std.SemanticVersion.parse(args[1])
                     catch {
                         return step.fail("Invalid version number", .{});
@@ -115,23 +115,24 @@ fn processCommand(allocator: std.mem.Allocator, step: *std.Build.Step, subcomman
     defer allocator.free(new_content);
 
     var buffer: [4096]u8 = undefined;
-    var tmp_file = try std.fs.AtomicFile.init(
-        "build.zig.zon", 
-        std.fs.File.default_mode, 
-        std.fs.cwd(), 
-        false,
-        &buffer
+    var tmp_file = try std.Io.Dir.createFileAtomic(
+        std.Io.Dir.cwd(),
+        io,
+        "build.zig.zon",
+        .{},
     );
-    defer tmp_file.deinit();
+    defer tmp_file.deinit(io);
 
-    try tmp_file.file_writer.interface.writeAll(new_content);
-    try tmp_file.finish();
+    var writer = tmp_file.file.writer(io,& buffer);
+    try writer.interface.writeAll(new_content);
+    try writer.flush();
+    try tmp_file.replace(io);
 
     step.result_stderr = try std.fmt.allocPrint(allocator, "Updated to `{f}`", .{new_version});
 }
 
 fn showUsage() ![]const u8 {
-    return 
+    return
         \\Usage:
         \\zig build version -- <CMD> <ARG> ...
         \\The following is supported subcommands

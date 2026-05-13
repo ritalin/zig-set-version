@@ -9,11 +9,11 @@ pub fn readCurrent(allocator: std.mem.Allocator, source: [:0]const u8) ![]const 
     return allocator.dupe(u8, source[range.start..range.end]);
 }
 
-pub fn currentVersion(allocator: std.mem.Allocator) ![]const u8 {
-    const path = try std.fs.cwd().realpathAlloc(allocator, "build.zig.zon");
+pub fn currentVersion(io: std.Io, allocator: std.mem.Allocator) ![]const u8 {
+    const path = try std.Io.Dir.cwd().realPathFileAlloc(io, "build.zig.zon", allocator);
     defer allocator.free(path);
 
-    const source = try readBuildZon(allocator, path);
+    const source = try readBuildZon(io, allocator, path);
     defer allocator.free(source);
 
     return readCurrent(allocator, source);
@@ -21,8 +21,8 @@ pub fn currentVersion(allocator: std.mem.Allocator) ![]const u8 {
 
 test "show current version" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3",
@@ -48,26 +48,26 @@ fn replaceVersion(allocator: std.mem.Allocator, source: [:0]const u8, range: std
     defer allocator.free(ver_str);
 
     var writer = std.Io.Writer.Allocating.init(allocator);
-    defer writer.deinit();
+    writer.deinit();
 
     try writer.writer.writeAll(source[0..range.start]);
     try writer.writer.writeAll(ver_str);
     try writer.writer.writeAll(source[range.end..]);
-    
+
     return writer.toOwnedSlice();
 }
 
 test "version renewal" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "0.0.1",
         \\  .dependencies = .{},
         \\}
     ;
-    const expect = 
+    const expect =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3",
@@ -101,27 +101,27 @@ pub fn resolveIncArgs(args: []const []const u8) !struct{part: VersionPart, optio
         if (CommandArgMap.get(arg[2..])) |kind| {
             switch (kind) {
                 .major => {
-                    if (done.contains(kind)) return error.VersionPartMultiple; 
+                    if (done.contains(kind)) return error.VersionPartMultiple;
                     part = .major;
                     done.setUnion(part_set);
                 },
                 .minor => {
-                    if (done.contains(kind)) return error.VersionPartMultiple; 
+                    if (done.contains(kind)) return error.VersionPartMultiple;
                     part = .minor;
                     done.setUnion(part_set);
                 },
                 .patch => {
-                    if (done.contains(kind)) return error.VersionPartMultiple; 
+                    if (done.contains(kind)) return error.VersionPartMultiple;
                     part = .patch;
                     done.setUnion(part_set);
                 },
                 .@"keep-pre" => {
-                    if (done.contains(kind)) return error.VersionOptMultiple; 
+                    if (done.contains(kind)) return error.VersionOptMultiple;
                     options.pre = true;
                     done.insert(kind);
                 },
                 .@"keep-build" => {
-                    if (done.contains(kind)) return error.VersionOptMultiple; 
+                    if (done.contains(kind)) return error.VersionOptMultiple;
                     options.build = true;
                     done.insert(kind);
                 },
@@ -191,15 +191,15 @@ pub fn increment(allocator: std.mem.Allocator, source: [:0]const u8, part: Versi
 
 test "increment patch version with keeping build" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-alpha+9876",
         \\  .dependencies = .{},
         \\}
     ;
-    const expect = 
+    const expect =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.4-alpha+9876",
@@ -217,15 +217,15 @@ test "increment patch version with keeping build" {
 
 test "increment patch version with keeping pre only" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-alpha+9876",
         \\  .dependencies = .{},
         \\}
     ;
-    const expect = 
+    const expect =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.4-alpha",
@@ -243,15 +243,15 @@ test "increment patch version with keeping pre only" {
 
 test "increment patch version without keeping options#1" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-alpha+9876",
         \\  .dependencies = .{},
         \\}
     ;
-    const expect = 
+    const expect =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.4",
@@ -269,15 +269,15 @@ test "increment patch version without keeping options#1" {
 
 test "increment patch version without keeping options#2" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-alpha+9876",
         \\  .dependencies = .{},
         \\}
     ;
-    const expect = 
+    const expect =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.4",
@@ -295,15 +295,15 @@ test "increment patch version without keeping options#2" {
 
 test "increment minor version with keeping all" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-alpha+9876",
         \\  .dependencies = .{},
         \\}
     ;
-    const expect = 
+    const expect =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.3.0-alpha+9876",
@@ -321,15 +321,15 @@ test "increment minor version with keeping all" {
 
 test "increment minor version without keeping all" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-alpha+9876",
         \\  .dependencies = .{},
         \\}
     ;
-    const expect = 
+    const expect =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.3.0",
@@ -347,15 +347,15 @@ test "increment minor version without keeping all" {
 
 test "increment major version with keeping all" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-alpha+9876",
         \\  .dependencies = .{},
         \\}
     ;
-    const expect = 
+    const expect =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "2.0.0-alpha+9876",
@@ -373,15 +373,15 @@ test "increment major version with keeping all" {
 
 test "increment major version without keeping all" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-alpha+9876",
         \\  .dependencies = .{},
         \\}
     ;
-    const expect = 
+    const expect =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "2.0.0",
@@ -397,19 +397,13 @@ test "increment major version without keeping all" {
     try std.testing.expectEqualStrings(expect, result);
 }
 
-pub fn readBuildZon(allocator: std.mem.Allocator, full_path: []const u8) ![:0]const u8 {
-    var file = try std.fs.openFileAbsolute(full_path, .{});
-    defer file.close();
+pub fn readBuildZon(io: std.Io, allocator: std.mem.Allocator, full_path: []const u8) ![:0]const u8 {
+    var file = try std.Io.Dir.openFileAbsolute(io, full_path, .{});
+    defer file.close(io);
     var buffer: [4096]u8 = undefined;
-    var reader = file.reader(&buffer);
-    
-    if (@hasDecl(std.Io.Reader, "allocRemainingAlignedSentinel")) {
-        return try reader.interface.allocRemainingAlignedSentinel(allocator, .unlimited, .@"8", 0);
-    }
-    else {
-        const size = try reader.getSize();
-        return try file.readToEndAllocOptions(allocator, size, size, .@"8", 0);
-    }
+    var reader = file.reader(io, &buffer);
+
+    return try reader.interface.allocRemainingAlignedSentinel(allocator, .unlimited, .@"8", 0);
 }
 
 fn readVersionInternal(allocator: std.mem.Allocator, source: [:0]const u8) !std.zig.Token.Loc {
@@ -443,8 +437,8 @@ fn readVersionInternal(allocator: std.mem.Allocator, source: [:0]const u8) !std.
 
 test "invalid zon format" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .dependencies = .{},
@@ -457,8 +451,8 @@ test "invalid zon format" {
 
 test "read invalid version from zon" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1,2,3",
@@ -475,7 +469,7 @@ test "read invalid version from zon" {
 test "read version from zon" {
     const allocator = std.testing.allocator;
 
-    const source = 
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3",
@@ -483,7 +477,7 @@ test "read version from zon" {
         \\}
     ;
     const expect = std.SemanticVersion{
-        .major = 1, .minor = 2, .patch = 3, 
+        .major = 1, .minor = 2, .patch = 3,
     };
     const range = try readVersionInternal(allocator, source);
     const version = try std.SemanticVersion.parse(source[range.start..range.end]);
@@ -493,8 +487,8 @@ test "read version from zon" {
 
 test "read version with pre-release from zon" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-beta",
@@ -502,7 +496,7 @@ test "read version with pre-release from zon" {
         \\}
     ;
     const expect = std.SemanticVersion{
-        .major = 1, .minor = 2, .patch = 3, 
+        .major = 1, .minor = 2, .patch = 3,
         .pre = "beta",
     };
     const range = try readVersionInternal(allocator, source);
@@ -513,8 +507,8 @@ test "read version with pre-release from zon" {
 
 test "read version with build-meta from zon" {
     const allocator = std.testing.allocator;
-    
-    const source = 
+
+    const source =
         \\.{
         \\  .name = "SomeProject",
         \\  .version = "1.2.3-alpha+9876",
@@ -522,7 +516,7 @@ test "read version with build-meta from zon" {
         \\}
     ;
     const expect = std.SemanticVersion{
-        .major = 1, .minor = 2, .patch = 3, 
+        .major = 1, .minor = 2, .patch = 3,
         .pre = "alpha", .build = "9876",
     };
     const range = try readVersionInternal(allocator, source);

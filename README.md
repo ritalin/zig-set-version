@@ -4,7 +4,12 @@ Build extension for handling sem-version in build.zig.zon
 
 ## Requirement
 
-* Zig 0.15.1 or latter.
+* Zig 0.16.0 or latter.
+
+> [!IMPORTANT]
+> Current version uses `std.Io`, available since Zig 0.16.0.
+> If you're using an older Zig version, please refer to the previous release:
+> https://github.com/ritalin/zig-set-version/tree/v0.2.1
 
 ## Instration
 

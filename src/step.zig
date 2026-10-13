@@ -1,12 +1,30 @@
 const std = @import("std");
 const op = @import("operator.zig");
 
-pub fn addStep(build: *std.Build) void {
-    const task = build.step("version", "Mnage project version");
-    const step = CommandStep.init(build, task.name) catch @panic("OOM");
+pub fn addStep(build: *std.Build, options: StepOptions) void {
+    const dep_set_version = build.dependency(options.dep_name, .{});
+    const cli = dep_set_version.artifact("set-version-cli");
+    const cli_runner = build.addRunArtifact(cli);
+    cli_runner.addArg(build.pathJoin(&.{build.root.root_dir.path.?, "build.zig.zon"}));
+    cli_runner.addPassthruArgs();
 
-    task.dependOn(&step.step);
+    build.step("version", "Manage project version").dependOn(&cli_runner.step);
 }
+
+pub const StepOptions = struct {
+    dep_name: []const u8,
+};
+
+pub const Subcommand = enum {
+    help,
+    show,
+    renew,
+    inc,
+};
+
+//
+// Deprecated
+//
 
 const CommandStep = struct {
     step: std.Build.Step,
@@ -15,7 +33,7 @@ const CommandStep = struct {
         const self = try owner.allocator.create(CommandStep);
         self.* = .{
             .step = std.Build.Step.init(.{
-                .id = .custom,
+                .tag = .custom,
                 .name = name,
                 .owner = owner,
                 .makeFn = make,
@@ -51,33 +69,26 @@ const CommandStep = struct {
     }
 };
 
-const Subcommand = enum {
-    help,
-    show,
-    renew,
-    inc,
-};
-
-fn processCommand(io: std.Io, allocator: std.mem.Allocator, step: *std.Build.Step, subcommand: Subcommand, args: []const []const u8, content: [:0]const u8) !void {
+pub fn processCommand(io: std.Io, allocator: std.mem.Allocator, terminal: std.Io.Terminal, subcommand: Subcommand, args: []const []const u8, content: [:0]const u8) !void {
     const new_version, const new_content = result: {
         switch (subcommand) {
             .help => {
-                step.result_stderr = try showUsage();
-                return;
+                return terminal.writer.print("{s}\n", .{ try showUsage() });
             },
             .show => {
-                step.result_stderr = try op.readCurrent(allocator, content);
-                return;
+                const version = try op.readCurrent(allocator, content);
+                defer allocator.free(version);
+                return terminal.writer.print("{s}\n", .{ version });
             },
             .renew => {
-                if (args.len < 2) {
-                    return step.fail("Need to specify version (Usage: `zig build version -- {s} \"1.2.3\"`)", .{@tagName(subcommand)});
+                if (args.len == 0) {
+                    return terminal.writer.print("Need to specify version (Usage: `zig build version -- {s} \"1.2.3\"`)\n", .{@tagName(subcommand)});
                 }
 
                 const version: std.SemanticVersion =
-                    std.SemanticVersion.parse(args[1])
+                    std.SemanticVersion.parse(args[0])
                     catch {
-                        return step.fail("Invalid version number", .{});
+                        return terminal.writer.print("Invalid version number/`{s}`\n", .{ args[1] });
                     };
 
                 break:result .{
@@ -86,13 +97,13 @@ fn processCommand(io: std.Io, allocator: std.mem.Allocator, step: *std.Build.Ste
                 };
             },
             .inc => {
-                if (args.len < 2) {
-                    return step.fail("Need to specify version (Usage: `zig build version -- {s} --major`)", .{@tagName(subcommand)});
+                if (args.len == 0) {
+                    return terminal.writer.print("Need to specify version (Usage: `zig build version -- {s} --major`)\n", .{@tagName(subcommand)});
                 }
-                const inc_args = op.resolveIncArgs(args[1..])
+                const inc_args = op.resolveIncArgs(args)
                 catch |err| {
-                    return step.fail(
-                        "{s}", .{
+                    return terminal.writer.print(
+                        "{s}\n", .{
                             switch (err) {
                                 error.VersionPartNotFound => "Need to specify exactly one version part",
                                 error.VersionPartMultiple => "Need to specify one of `--major <VAL>`, `--minor <VAL>` and `--patch <VAL>`",
@@ -128,10 +139,10 @@ fn processCommand(io: std.Io, allocator: std.mem.Allocator, step: *std.Build.Ste
     try writer.flush();
     try tmp_file.replace(io);
 
-    step.result_stderr = try std.fmt.allocPrint(allocator, "Updated to `{f}`", .{new_version});
+    try terminal.writer.print("Updated to `{f}`\n", .{new_version});
 }
 
-fn showUsage() ![]const u8 {
+pub fn showUsage() ![]const u8 {
     return
         \\Usage:
         \\zig build version -- <CMD> <ARG> ...

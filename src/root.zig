@@ -1,8 +1,10 @@
 const std = @import("std");
 const op = @import("./operator.zig");
+const step = @import("./step.zig");
 
 pub const VersionSetterStep = struct {
-    pub const addStep = @import("./step.zig").addStep;
+    pub const addStep = step.addStep;
+    pub const StepOptions = step.StepOptions;
 };
 
 pub fn currentVersion(io: std.Io, allocator: std.mem.Allocator) ![]const u8 {

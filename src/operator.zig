@@ -91,7 +91,7 @@ pub fn resolveIncArgs(args: []const []const u8) !struct{part: VersionPart, optio
 
     const DoneSet = std.enums.EnumSet(CommandArgKind);
     const part_set = DoneSet.init(.{.major = true, .minor = true, .patch = true});
-    var done = DoneSet.initEmpty();
+    var done: DoneSet = .empty;
 
     for (args) |arg| {
         if (! std.mem.startsWith(u8, arg, "--")) {
@@ -407,7 +407,7 @@ pub fn readBuildZon(io: std.Io, allocator: std.mem.Allocator, full_path: []const
 }
 
 fn readVersionInternal(allocator: std.mem.Allocator, source: [:0]const u8) !std.zig.Token.Loc {
-    var ast = try std.zig.Ast.parse(allocator, source, .zon);
+    var ast = try std.zig.Ast.parse(allocator, source, .{.mode = .zon});
     defer ast.deinit(allocator);
 
     const node_links = ast.nodes.items(.data);

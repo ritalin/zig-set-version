@@ -4,6 +4,16 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const exe = b.addExecutable(.{
+        .name = "set-version-cli",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    b.installArtifact(exe);
+
     const exe_unit_tests = b.addTest(.{
         .root_module = b.addModule("set-version", .{
             .root_source_file = b.path("src/root.zig"),

@@ -81,12 +81,12 @@ pub fn processCommand(io: std.Io, allocator: std.mem.Allocator, terminal: std.Io
                 return terminal.writer.print("{s}\n", .{ version });
             },
             .renew => {
-                if (args.len < 2) {
+                if (args.len == 0) {
                     return terminal.writer.print("Need to specify version (Usage: `zig build version -- {s} \"1.2.3\"`)\n", .{@tagName(subcommand)});
                 }
 
                 const version: std.SemanticVersion =
-                    std.SemanticVersion.parse(args[1])
+                    std.SemanticVersion.parse(args[0])
                     catch {
                         return terminal.writer.print("Invalid version number/`{s}`\n", .{ args[1] });
                     };
@@ -97,10 +97,10 @@ pub fn processCommand(io: std.Io, allocator: std.mem.Allocator, terminal: std.Io
                 };
             },
             .inc => {
-                if (args.len < 2) {
+                if (args.len == 0) {
                     return terminal.writer.print("Need to specify version (Usage: `zig build version -- {s} --major`)\n", .{@tagName(subcommand)});
                 }
-                const inc_args = op.resolveIncArgs(args[1..])
+                const inc_args = op.resolveIncArgs(args)
                 catch |err| {
                     return terminal.writer.print(
                         "{s}\n", .{
@@ -139,7 +139,7 @@ pub fn processCommand(io: std.Io, allocator: std.mem.Allocator, terminal: std.Io
     try writer.flush();
     try tmp_file.replace(io);
 
-    try terminal.writer.print("Updated to `{f}`", .{new_version});
+    try terminal.writer.print("Updated to `{f}`\n", .{new_version});
 }
 
 pub fn showUsage() ![]const u8 {

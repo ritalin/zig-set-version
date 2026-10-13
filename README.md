@@ -4,7 +4,7 @@ Build extension for handling sem-version in build.zig.zon
 
 ## Requirement
 
-* Zig 0.16.0 or latter.
+* Zig 0.17.0 or latter.
 
 > [!IMPORTANT]
 > Current version uses `std.Io`, available since Zig 0.16.0.
@@ -23,7 +23,7 @@ Then add the following to `build.zig`.
 
 ```zig
 pub fn build(b: *std.Build) void {
-    @import("set_version").VersionSetterStep.addStep(b);
+    @import("set_version").VersionSetterStep.addStep(b, .{ .dep_name = "set_version" });
     // (snip)
 }
 ```
